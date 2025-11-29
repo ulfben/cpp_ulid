@@ -4,7 +4,9 @@ A small, header-only C++ library for generating, parsing, and manipulating [ULID
 
 Provides fast generation, optional per-thread monotonicity, canonical [Crockford Base32 encoding](https://www.crockford.com/base32.html), and a compact, modern API. This implementation is written in standard C++23 with no external dependencies beyond the standard library (the PRNG backend is pluggable).
 
-It comes with an extensive test suite validating correctness, encoding/decoding, monotonicity, and spec compliance.
+It comes with an extensive test suite validating correctness, encoding/decoding, monotonicity, and spec compliance. 
+
+[Try it on Compiler Explorer](https://compiler-explorer.com/z/d36E4jf3M)!
 
 ### What are ULIDs?
 
@@ -69,6 +71,8 @@ The repository ships with test.cpp, a comprehensive correctness suite based on G
 - Crockford Base32 alphabet and canonical encoding
 - Spec example roundtrips
 - Timestamp and byte-level correctness
+
+You can [run all tests on compiler-explorer](https://compiler-explorer.com/z/d36E4jf3M).
 
 ## Dependencies
 Optional PRNG dependency: https://github.com/ulfben/cpp_prngs/
