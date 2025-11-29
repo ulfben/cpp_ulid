@@ -41,7 +41,7 @@ if(parsed) {
 | ------------------------------------------------- | ---------- | -------------------------------------------------------------------------------------------------------------------------------------------- |
 | `generate() noexcept`                      | `ulid_t`   | Generates a ULID using current timestamp and a per-thread PRNG. Millisecond-sorted but not strictly monotonic.                               |
 | `generate_monotonic() noexcept`            | `ulid_t`   | Per-thread monotonic sequence (guarantueed only up to 2^80 ULIDs/ms). Handles clock rollback.                                              |
-| `from_string(string_view)`       | `optional<ulid_t>` | Parses a 26-character Base32 ULID. Accepts lowercase and ambiguous input, returns canonical value. Rejects invalid or non-canonical strings. |
+| `from_string(string_view) noexcept`       | `optional<ulid_t>` | Parses a 26-character Base32 ULID. Accepts lowercase and ambiguous input, returns canonical value. Rejects invalid or non-canonical strings. |
 | `from_bytes(span<const byte,16>) noexcept` | `ulid_t`   | Constructs from 16 raw bytes.                                                                                                                |
 
 ## Conversion
