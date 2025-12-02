@@ -415,5 +415,141 @@ namespace {
 		EXPECT_FALSE(t3.has_value());
 	}
 
+	TEST(Ulid, ReadableRoundtripGenerate){
+	// generate -> to_readable_string -> from_readable_string is identity.
+		for(int i = 0; i < 500; ++i){
+			auto id = ulid_t::generate();
+			auto s = id.to_readable_string();
+
+			auto parsed_opt = ulid_t::from_readable_string(s);
+			ASSERT_TRUE(parsed_opt.has_value()) << "Failed to parse readable ULID: " << s;
+
+			EXPECT_EQ(*parsed_opt, id);
+		}
+	}
+
+	TEST(Ulid, ReadableRoundtripKnownSpecExample){
+	// Canonical example from the ULID spec
+		const std::string spec_example = "01ARZ3NDEKTSV4RRFFQ69G5FAV";
+
+		auto base_opt = ulid_t::from_string(spec_example);
+		ASSERT_TRUE(base_opt.has_value());
+		auto base = *base_opt;
+
+		auto readable = base.to_readable_string();
+
+		auto parsed_opt = ulid_t::from_readable_string(readable);
+		ASSERT_TRUE(parsed_opt.has_value());
+
+		auto parsed = *parsed_opt;
+		EXPECT_EQ(parsed.to_string(), spec_example);
+		EXPECT_EQ(parsed, base);
+	}
+
+	TEST(Ulid, FromReadableStringRejectsOutOfRangeFields){
+		// Helper to make a readable string with a specific "YYYYMMDDThhmmssmmmZ"´and a fixed random tail.
+		auto make_readable = [](std::string prefix){
+			// prefix must be 19 chars: YYYYMMDDThhmmssmmmZ
+			EXPECT_EQ(prefix.size(), 19u);
+			return prefix + "0123456789ABCDEFG"; // 16 Crockford chars
+		};
+
+		// Month 13
+		{
+			std::string s = make_readable("20251301T000000000Z");
+			auto r = ulid_t::from_readable_string(s);
+			EXPECT_FALSE(r.has_value());
+		}
+
+		// Day 00
+		{
+			std::string s = make_readable("20250100T000000000Z");
+			auto r = ulid_t::from_readable_string(s);
+			EXPECT_FALSE(r.has_value());
+		}
+
+		// Day 32
+		{
+			std::string s = make_readable("20250132T000000000Z");
+			auto r = ulid_t::from_readable_string(s);
+			EXPECT_FALSE(r.has_value());
+		}
+
+		// Hour 24
+		{
+			std::string s = make_readable("20250101T240000000Z");
+			auto r = ulid_t::from_readable_string(s);
+			EXPECT_FALSE(r.has_value());
+		}
+
+		// Minute 60
+		{
+			std::string s = make_readable("20250101T006000000Z");
+			auto r = ulid_t::from_readable_string(s);
+			EXPECT_FALSE(r.has_value());
+		}
+
+		// Second 60
+		{
+			std::string s = make_readable("20250101T000060000Z");
+			auto r = ulid_t::from_readable_string(s);
+			EXPECT_FALSE(r.has_value());
+		}
+
+		// Milliseconds 1000
+		{
+			std::string s = "20250101T0000001000Z0123456789ABCDEFG";
+			auto r = ulid_t::from_readable_string(s);
+			EXPECT_FALSE(r.has_value());
+		}
+	}
+
+	TEST(Ulid, FromReadableStringRejectsInvalidRandomTail){
+		// Valid prefix: 2025-01-01T00:00:00.000Z
+		std::string prefix = "20250101T000000000Z";
+
+		// Tail with '!' which is not a Crockford Base32 char
+		std::string invalid_tail = "0123456789ABF!";
+		invalid_tail.resize(16, '0'); // ensure length 16; '!' somewhere in there
+
+		std::string s = prefix + invalid_tail;
+
+		auto r = ulid_t::from_readable_string(s);
+		EXPECT_FALSE(r.has_value());
+	}
+
+	TEST(Ulid, FromReadableStringSortingMatchesStringSorting){
+		constexpr int N = 32;
+		std::vector<std::string> readable;
+		readable.reserve(N);
+
+		for(int i = 0; i < N; ++i){
+			auto id = ulid_t::generate_monotonic();
+			readable.push_back(id.to_readable_string());
+		}
+
+		// Shuffle to break generation order
+		std::mt19937 rng{123};
+		std::shuffle(readable.begin(), readable.end(), rng);
+
+		// Sort strings lexicographically		
+		std::sort(readable.begin(), readable.end());
+
+		// Parse back and ensure ulids are strictly increasing
+		std::vector<ulid_t> parsed;
+		parsed.reserve(N);
+		for(const auto& s : readable){
+			auto r = ulid_t::from_readable_string(s);
+			ASSERT_TRUE(r.has_value()) << "Failed to parse: " << s;
+			parsed.push_back(*r);
+		}
+
+		for(int i = 1; i < N; ++i){
+			EXPECT_LT(parsed[i - 1], parsed[i])
+				<< "Non-increasing at index " << i;
+		}
+	}
+
+
 } // namespace
 

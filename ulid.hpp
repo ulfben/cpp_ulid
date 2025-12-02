@@ -120,30 +120,76 @@ namespace ulid{
 			write_big_endian<8>(acc[1], ulid.high_bytes()); // high bits are in acc[1] (bits 64..127)
 			write_big_endian<8>(acc[0], ulid.low_bytes()); // low bits are in acc[0] (bits 0..63)
 			return ulid;
-		}				
-
-		// Expects "YYYYMMDDThhmmssmmmZrrrrrrrrrrrrrrrr" (35 chars):
-		// - 0..3   year
-		// - 4..5   month
-		// - 6..7   day
-		// - 8      'T'
-		// - 9..10  hour
-		// - 11..12 minute
-		// - 13..14 second
-		// - 15..17 millisecond
-		// - 18     'Z' (UTC)
-		// - 19..34 16-char Crockford Base32 randomness (same as canonical ULID)
-		[[nodiscard]] static std::optional<ulid_t> from_readable_string(std::string_view s) noexcept{
-			if(s.size() != 35){
-				return std::nullopt;
-			}
-			if(s[8] != 'T' || s[18] != 'Z'){
-				return std::nullopt;
-			}
-			//TODO!
-			return std::nullopt;
 		}
 
+		// Note: from_readable_string() is an extension and not part of the ULID standard.
+		// Expects "YYYYMMDDThhmmssmmmZrrrrrrrrrrrrrrrr" (35 chars).
+		// Timestamp ends at Z, after which follows 16-char Crockford Base32 randomness (same as canonical ULID)
+		[[nodiscard]] static std::optional<ulid_t> from_readable_string(std::string_view s){			
+			if(s.size() != 35 || s[8] != 'T' || s[18] != 'Z'){
+				return std::nullopt;
+			}			
+
+			auto parse_u32 = [](std::string_view s, std::size_t pos, std::size_t len) noexcept -> std::optional<unsigned>{
+				unsigned v{}; 
+				const char* first = s.data() + pos; 
+				const char* last = first + len;
+				auto rc = std::from_chars(first, last, v);
+				if(rc.ec != std::errc{} || rc.ptr != last){
+					return std::nullopt;
+				}
+				return v;
+			};
+
+			auto year_num = parse_u32(s, 0, 4); //0..3   year
+			auto month_num = parse_u32(s, 4, 2); // 4..5   month
+			auto day_num = parse_u32(s, 6, 2); //6..7   day
+			auto hour_num = parse_u32(s, 9, 2); //8 = 'T', 9..10  hour
+			auto minute_num = parse_u32(s, 11, 2); //11..12 minute
+			auto second_num = parse_u32(s, 13, 2); //13..14 second
+			auto millis_num = parse_u32(s, 15, 3); //15..17 millisecond
+
+			if(!year_num || !month_num || !day_num || !hour_num || !minute_num || !second_num || !millis_num){
+				return std::nullopt;
+			}
+			if(*month_num == 0 || *month_num > 12 || *day_num == 0 || *day_num > 31 || *hour_num > 23 || *minute_num > 59 || *second_num > 59 || *millis_num > 999){
+				return std::nullopt; //failed basic range checks 
+			}
+			
+			using namespace std::chrono;
+
+			year_month_day ymd{
+				year{static_cast<int>(*year_num)},
+				month{*month_num},
+				day{*day_num}
+			};
+			if(!ymd.ok()){ //calendar validation (feb 30 etc)
+				return std::nullopt;
+			}
+						
+			const sys_days day_tp{ymd}; // Start from midnight UTC on that date
+
+			// Add the time-of-day components
+			// The resulting time_point will have millisecond precision.
+			const auto tp =
+				day_tp
+				+ hours{*hour_num}
+				+ minutes{*minute_num}
+				+ seconds{*second_num}
+			+ milliseconds{*millis_num};
+			
+			const auto dur = tp.time_since_epoch();
+			if(dur < milliseconds::zero()){
+				return std::nullopt; // if someone passes a date before 1970-01-01, tp.time_since_epoch() is negative, which would wrap our uint64
+			}
+			
+			const auto timestamp_ms = static_cast<std::uint64_t>(dur.count()); // milliseconds since Unix epoch
+			ulid_t tmp{}; // empty ULID we will populate with the parsed timestamp
+			write_big_endian<6>(timestamp_ms, tmp.timestamp_bytes()); // write the 48-bit timestamp into the first 6 bytes
+			std::string canonical = tmp.to_string(); // encode this partial ULID into canonical 26-char Base32 form
+			canonical.replace(10, 16, s.substr(19, 16)); // splice in the 16-char randomness from the readable input
+			return ulid_t::from_string(canonical); // parse the completed canonical ULID
+		}
 
 		[[nodiscard]] constexpr static ulid_t from_bytes(std::span<const byte, 16> bytes) noexcept{
 			ulid_t ulid{}; // manual copy to avoid pulling in <algorithm>. sorry for the crime scene!
@@ -182,7 +228,7 @@ namespace ulid{
 			const auto ms = duration_cast<milliseconds>(tp.time_since_epoch());
 			std::string out = std::format("{:%Y%m%dT%H%M%S}{}Z", //YYYYMMDDThhmmssnnnZ, 19 chars for date-time
 				floor<std::chrono::seconds>(tp),
-				std::format("{:03}", ms.count() % 1000)
+				std::format("{:03}", ms.count() % 1000) //handle milliseconds manually
 			);
 			const auto full = to_string();				// 26 chars: 10 ts + 16 random
 			out.append(full.begin() + 10, full.end());  // append last 16 chars			
@@ -334,6 +380,8 @@ namespace ulid{
 		}
 
 	};
+
+
 
 	inline std::ostream& operator<<(std::ostream& os, const ulid_t& id){
 		return os << id.to_string();

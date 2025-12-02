@@ -38,18 +38,25 @@ if(parsed) {
 }
 ```
 
+## Human-readable extension:
+This library also supports a non-standard 35-character ULID variant with an embedded ISO8601 timestamp (`YYYYMMDDThhmmssmmmZ`). It preserves millisecond resolution and the same sort order as canonical ULIDs, while making the timestamp easier to inspect in logs, filenames, and debugging tools.
+
+Use `to_readable_string()` and `from_readable_string()` to convert to and from this representation.
+
 ## Creation
-| Function                                          | Returns    | Description                                                                                                                                  |
-| ------------------------------------------------- | ---------- | -------------------------------------------------------------------------------------------------------------------------------------------- |
-| `generate() noexcept`                      | `ulid_t`   | Generates a ULID using current timestamp and a per-thread PRNG. Millisecond-sorted but not strictly monotonic.                               |
-| `generate_monotonic() noexcept`            | `ulid_t`   | Per-thread monotonic sequence (guarantueed only up to 2^80 ULIDs/ms). Handles clock rollback.                                              |
-| `from_string(string_view) noexcept`       | `optional<ulid_t>` | Parses a 26-character Base32 ULID. Accepts lowercase and ambiguous input, returns canonical value. Rejects invalid or non-canonical strings. |
-| `from_bytes(span<const byte,16>) noexcept` | `ulid_t`   | Constructs from 16 raw bytes.                                                                                                                |
+| Function                                          | Returns            | Description                                                                                                                                  |
+| ------------------------------------------------- | ------------------ | -------------------------------------------------------------------------------------------------------------------------------------------- |
+| `generate() noexcept`                             | `ulid_t`           | Generates a ULID using current timestamp and a per-thread PRNG. Millisecond-sorted but not strictly monotonic.                              |
+| `generate_monotonic() noexcept`                   | `ulid_t`           | Per-thread monotonic sequence (guaranteed only up to 2^80 ULIDs/ms). Handles clock rollback.                                                |
+| `from_string(string_view) noexcept`               | `optional<ulid_t>` | Parses a 26-character Base32 ULID. Accepts lowercase and ambiguous input, returns canonical ULID or nullopt.|
+| `from_readable_string(string_view)`               | `optional<ulid_t>` | Parses the extended 35-character format (`YYYYMMDDThhmmssmmmZxxxxxxxxxxxxxxxx`). Human-readable timestamp + 16-char ULID randomness. Returns canonical ULID or `nullopt` on invalid input. |
+| `from_bytes(span<const byte,16>) noexcept`        | `ulid_t`           | Constructs from 16 raw bytes.                                                                                                                |                                                                                                            |
 
 ## Conversion
 | Method                                          | Returns    | Description                                          |
 | ----------------------------------------------- | ---------- | ---------------------------------------------------- |
-| `to_string() const`                      | `string`   | Canonical uppercase Crockford Base32 representation. |
+| `to_string() const`                      | `string`   | 26-character canonical uppercase Crockford Base32 representation. |
+| `to_readable_string() const`                      | `string`   | 35-character representation with human-readable ISO8601-form timestamp (`YYYYMMDDThhmmssmmmZ`). |
 | `explicit operator string() const`              | `string`   | Same as `to_string()`.                               |
 | `to_bytes() const noexcept`      | `array<byte,16>`    | Raw bytes in big-endian layout.                      |
 | `as_bytes() const noexcept` | `span<const byte,16>`     | Borrow internal bytes.                               |
