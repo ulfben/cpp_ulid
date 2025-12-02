@@ -14,9 +14,27 @@
 namespace {
 	using ulid::ulid_t;
 
-	// Helper: construct a ULID byte array from a 48-bit timestamp
-	// Timestamp is encoded big-endian in bytes[0..5], rest of the bytes are set to 0.
-	static std::array<ulid_t::byte, 16> make_bytes_from_timestamp(std::uint64_t ts){
+	//helper
+	// Crockford Base32 alphabet from the spec:
+		// 0123456789ABCDEFGHJKMNPQRSTVWXYZ
+	constexpr static bool is_crockford_char(char c) noexcept{
+		switch(c){
+		case '0': case '1': case '2': case '3': case '4':
+		case '5': case '6': case '7': case '8': case '9':
+		case 'A': case 'B': case 'C': case 'D': case 'E':
+		case 'F': case 'G': case 'H': case 'J': case 'K':
+		case 'M': case 'N': case 'P': case 'Q': case 'R':
+		case 'S': case 'T': case 'V': case 'W': case 'X':
+		case 'Y': case 'Z':
+			return true;
+		default:
+			return false;
+		}
+	};
+
+// Helper: construct a ULID byte array from a 48-bit timestamp
+// Timestamp is encoded big-endian in bytes[0..5], rest of the bytes are set to 0.
+	static std::array<ulid_t::byte, 16> make_bytes_from_timestamp(std::uint64_t ts) noexcept{
 		std::array<ulid_t::byte, 16> bytes{};
 		// write 48-bit big-endian timestamp into bytes[0..5]
 		for(int i = 0; i < 6; ++i){
@@ -44,23 +62,6 @@ namespace {
 		auto s = id.to_string();
 
 		ASSERT_EQ(s.size(), 26u);
-
-		// Crockford Base32 alphabet from the spec:
-		// 0123456789ABCDEFGHJKMNPQRSTVWXYZ
-		auto is_crockford_char = [](char c){
-			switch(c){
-			case '0': case '1': case '2': case '3': case '4':
-			case '5': case '6': case '7': case '8': case '9':
-			case 'A': case 'B': case 'C': case 'D': case 'E':
-			case 'F': case 'G': case 'H': case 'J': case 'K':
-			case 'M': case 'N': case 'P': case 'Q': case 'R':
-			case 'S': case 'T': case 'V': case 'W': case 'X':
-			case 'Y': case 'Z':
-				return true;
-			default:
-				return false;
-			}
-			};
 
 		for(char c : s){
 			ASSERT_TRUE(is_crockford_char(c))
@@ -336,7 +337,82 @@ namespace {
 		}
 		const auto id1 = ulid_t::from_bytes(std::span<const ulid_t::byte, 16>{bytes1});
 		const auto id2 = ulid_t::from_bytes(std::span<const ulid_t::byte, 16>{bytes2});
-		EXPECT_EQ(id1, id2); 
+		EXPECT_EQ(id1, id2);
+	}
+
+	TEST(Ulid, ReadableStringHasCorrectShape){
+		auto id = ulid_t::generate();
+		auto s = id.to_readable_string();
+		//YYYYMMDDThhmmssmmmZrrrrrrrrrrrrrrrr
+		ASSERT_EQ(s.size(), 35u);
+		EXPECT_EQ(s[8], 'T');
+		EXPECT_EQ(s[18], 'Z');
+	}
+
+	TEST(Ulid, ReadableStringHasValidContent){
+		auto id = ulid_t::generate();
+		auto s = id.to_readable_string();
+		ASSERT_EQ(s.size(), 35u);
+		// YYYYMMDDThhmmssmmmZrrrrrrrrrrrrrrrr
+		for(int i = 0; i < 8; ++i){
+			EXPECT_TRUE(std::isdigit(static_cast<unsigned char>(s[i])))
+				<< "Expected digit in date at pos " << i << ", got: " << s[i];
+		}
+
+		EXPECT_EQ(s[8], 'T');
+
+		for(int i = 9; i <= 17; ++i){
+			EXPECT_TRUE(std::isdigit(static_cast<unsigned char>(s[i])))
+				<< "Expected digit in time at pos " << i << ", got: " << s[i];
+		}
+
+		EXPECT_EQ(s[18], 'Z');
+
+		for(int i = 19; i < 35; ++i){
+			ASSERT_TRUE(is_crockford_char(s[i]))
+				<< "Unexpected character in readable ULID random tail: " << s[i];
+		}
+	}
+
+	TEST(Ulid, ReadableStringSortingMatchesValueSorting){
+		constexpr int N = 64;
+		std::array<ulid_t, N> ids{};
+
+		for(int i = 0; i < N; ++i){
+			ids[i] = ulid_t::generate_monotonic();
+		}
+
+		// Shuffle to avoid relying on generation order
+		std::mt19937 rng{1234};
+		std::shuffle(ids.begin(), ids.end(), rng);
+
+		auto ids_sorted = ids;
+		std::sort(ids_sorted.begin(), ids_sorted.end());
+
+		std::vector<std::string> readable;
+		readable.reserve(N);
+		for(const auto& id : ids){
+			readable.push_back(id.to_readable_string());
+		}
+		std::sort(readable.begin(), readable.end());
+
+		for(int i = 0; i < N; ++i){
+			EXPECT_EQ(ids_sorted[i].to_readable_string(), readable[i]);
+		}
+	}
+
+	TEST(Ulid, FromReadableStringRejectsInvalidShape){
+		// Too short
+		auto t1 = ulid_t::from_readable_string("20250101T000000000Z");
+		EXPECT_FALSE(t1.has_value());
+
+		// Missing 'T'
+		auto t2 = ulid_t::from_readable_string("20250101X000000000ZABCDEFGHIJKLMNOP");
+		EXPECT_FALSE(t2.has_value());
+
+		// Missing 'Z'
+		auto t3 = ulid_t::from_readable_string("20250101T000000000XABCDEFGHIJKLMNOP");
+		EXPECT_FALSE(t3.has_value());
 	}
 
 } // namespace

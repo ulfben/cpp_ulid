@@ -9,6 +9,8 @@
 #include <span>
 #include <string>
 #include <string_view>
+#include <format>
+#include <charconv>
 
 // ULID (Universally Unique Lexicographically Sortable Identifier) is fundamentally:
 // - a 128-bit unsigned integer
@@ -61,7 +63,7 @@ namespace ulid{
 		// Feel free to replace RomuDuoJr with any PRNG you like (e.g. std::mt19937).
 		// RomuDuoJr is the default here because it is tiny, extremely fast, and produces
 		// good statistical quality for non-cryptographic identifiers.
-		// see: https://github.com/ulfben/cpp_prngs/ for more information
+		// see: https://github.com/ulfben/cpp_prngs/ for benchmarks and more information
 
 		[[nodiscard]] static ulid_t generate() noexcept{
 			const auto ts = now_ms();
@@ -101,7 +103,7 @@ namespace ulid{
 			std::array<std::uint64_t, 3> acc{}; // 192-bit accumulator: acc[0] = least significant 64 bits        
 			for(char ch : s){
 				auto v_opt = decode_crockford(ch);
-				if(!v_opt){ return std::nullopt; }				    
+				if(!v_opt){ return std::nullopt; }
 				std::uint64_t carry = *v_opt; //carry = 0..31      
 				for(auto& a : acc){
 					const std::uint64_t new_carry = a >> (64 - 5);
@@ -117,6 +119,37 @@ namespace ulid{
 			ulid_t ulid{};
 			write_big_endian<8>(acc[1], ulid.high_bytes()); // high bits are in acc[1] (bits 64..127)
 			write_big_endian<8>(acc[0], ulid.low_bytes()); // low bits are in acc[0] (bits 0..63)
+			return ulid;
+		}				
+
+		// Expects "YYYYMMDDThhmmssmmmZrrrrrrrrrrrrrrrr" (35 chars):
+		// - 0..3   year
+		// - 4..5   month
+		// - 6..7   day
+		// - 8      'T'
+		// - 9..10  hour
+		// - 11..12 minute
+		// - 13..14 second
+		// - 15..17 millisecond
+		// - 18     'Z' (UTC)
+		// - 19..34 16-char Crockford Base32 randomness (same as canonical ULID)
+		[[nodiscard]] static std::optional<ulid_t> from_readable_string(std::string_view s) noexcept{
+			if(s.size() != 35){
+				return std::nullopt;
+			}
+			if(s[8] != 'T' || s[18] != 'Z'){
+				return std::nullopt;
+			}
+			//TODO!
+			return std::nullopt;
+		}
+
+
+		[[nodiscard]] constexpr static ulid_t from_bytes(std::span<const byte, 16> bytes) noexcept{
+			ulid_t ulid{}; // manual copy to avoid pulling in <algorithm>. sorry for the crime scene!
+			ulid.data = {bytes[0], bytes[1], bytes[2], bytes[3], bytes[4], bytes[5], bytes[6], bytes[7],
+				bytes[8], bytes[9], bytes[10],bytes[11],bytes[12],bytes[13],bytes[14],bytes[15]
+			};
 			return ulid;
 		}
 
@@ -136,18 +169,29 @@ namespace ulid{
 			return std::span<const byte, 16>(data);
 		}
 
-		[[nodiscard]] constexpr static ulid_t from_bytes(std::span<const byte, 16> bytes) noexcept{
-			ulid_t ulid{}; // manual copy to avoid pulling in <algorithm>. sorry for the crime scene!
-			ulid.data = { bytes[0], bytes[1], bytes[2], bytes[3], bytes[4], bytes[5], 
-						  bytes[6], bytes[7], bytes[8], bytes[9], bytes[10],bytes[11], 
-						  bytes[12], bytes[13], bytes[14], bytes[15]
-			};
-			return ulid;
+		// Note: to_readable_string() is an extension and not part of the ULID standard.
+		// It rewrites the ULID timestamp: the first 10 Base32 chars are replaced with
+		// a 19-character UTC datetime in compact ISO8601 form (YYYYMMDDThhmmssmmmZ).
+		// The random 16-character suffix is preserved unchanged.
+		// The result is a 35 character string with human readable timestamp. It retains 
+		// millisecond precision and is lexicographically sortable in the same way as a normal ULID.	
+		[[nodiscard]] std::string to_readable_string() const{
+			using namespace std::chrono;
+			using sys_ms = std::chrono::sys_time<std::chrono::milliseconds>;
+			const auto tp = sys_ms{milliseconds{timestamp_ms()}};
+			const auto ms = duration_cast<milliseconds>(tp.time_since_epoch());
+			std::string out = std::format("{:%Y%m%dT%H%M%S}{}Z", //YYYYMMDDThhmmssnnnZ, 19 chars for date-time
+				floor<std::chrono::seconds>(tp),
+				std::format("{:03}", ms.count() % 1000)
+			);
+			const auto full = to_string();				// 26 chars: 10 ts + 16 random
+			out.append(full.begin() + 10, full.end());  // append last 16 chars			
+			return out; // Final form: "YYYYMMDDThhmmssmmmZrrrrrrrrrrrrrrrr" (35 chars)
 		}
 
 		[[nodiscard]] constexpr std::uint64_t timestamp_ms() const noexcept{
 			std::uint64_t ts = 0;
-			for(const byte b : timestamp_bytes()){ 
+			for(const byte b : timestamp_bytes()){
 				ts = (ts << 8) | static_cast<std::uint64_t>(b);
 			}
 			return ts;
@@ -164,7 +208,7 @@ namespace ulid{
 		};
 
 		std::array<byte, 16> data{};
-				
+
 		constexpr std::span<byte, 6> timestamp_bytes() noexcept{
 			return std::span<byte, 6>{data.begin(), 6};
 		}
@@ -288,6 +332,7 @@ namespace ulid{
 			auto salt = reinterpret_cast<std::uintptr_t>(&dummy);
 			return timestamp ^ static_cast<std::uint64_t>(salt);
 		}
+
 	};
 
 	inline std::ostream& operator<<(std::ostream& os, const ulid_t& id){
