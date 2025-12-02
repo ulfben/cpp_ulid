@@ -12,46 +12,84 @@
 #include <format>
 #include <charconv>
 
-// ULID (Universally Unique Lexicographically Sortable Identifier) is fundamentally:
-// - a 128-bit unsigned integer
-// - serialized to 16 numeric bytes
-// - encoded using Crockford base32
+// cpp_ulid - A small header-only C++23 library for generating, parsing,
+// and manipulating ULIDs (Universally Unique Lexicographically Sortable
+// Identifiers).
 //
-// The 128-bit are laid out thusly:
-//   - 48 bits: millisecond timestamp since Unix epoch
+// Author: Ulf Benjaminsson
+// License: MIT
+// Repository: https://github.com/ulfben/cpp_ulid
+// Live demo: https://compiler-explorer.com/z/f9Mfebxv5
+//
+// A ULID is:
+//   - a 128-bit value
+//   - encoded as 16 big-endian bytes
+//   - represented canonically as a 26-character Crockford Base32 string
+//   - lexicographically sortable by timestamp
+//
+// Layout (big-endian):
+//   - 48 bits: milliseconds since Unix epoch
 //   - 80 bits: randomness
 //
-// Encoded in Crockford Base32 it becomes a 26 character string that is
-// lexicographically sortable in the same order as its timestamp. This makes
-// ULIDs useful as human-friendly, time-orderable identifiers for logs,
-// database keys, filenames, etc.
-// 
 // This header provides:
 //
+// Creation
+// --------
 //   - ulid_t::generate()
-//       Generates a ULID using the current time and a per-thread PRNG. 
-//		 The result is time-ordered at millisecond precision, but multiple 
-//		 IDs within the same millisecond are not guaranteed to be
-//       strictly monotonic.
+//       Create a ULID using the current timestamp and a per-thread PRNG.
+//       Sorted at millisecond precision; not strictly monotonic.
 //
 //   - ulid_t::generate_monotonic()
-//       Generates a per-thread monotonic ULID sequence. Within each thread,
-//       IDs are strictly increasing in lexicographic order, even when many
-//       IDs are created in the same millisecond or when the system clock
-//       moves backwards.
-//		 
-//		 Monotonicity is per thread only: there is no cross-thread coordination,
-//		 no locking, and no global ordering between threads.
+//       Per-thread monotonic ULID generator. Ensures lexicographically
+//       increasing values within a thread, even with clock rollback or
+//       multiple IDs within the same millisecond.
 //
-//   - ulid_t::from_string()
-//       Parses a 26 character Crockford Base32 ULID string into a ulid_t.
-//       Returns std::nullopt if the string is invalid or non-canonical.
+//   - ulid_t::from_string(string_view)
+//       Parse a 26-character canonical Crockford Base32 ULID.
+//       Accepts lowercase and ambiguous input; returns std::nullopt on error.
 //
-//   - ulid_t::to_string()
-//       Encodes a ulid_t into its canonical 26 character Crockford Base32
-//       representation.
+//   - ulid_t::from_readable_string(string_view)
+//       Parse the non-standard 35-character human-readable form
+//       "YYYYMMDDThhmmssmmmZxxxxxxxxxxxxxxxx".
+//       Preserves millisecond precision and lexical sort order.
 //
-// Many thanks to Marius Bancila for the inspiration! 
+//   - ulid_t::from_bytes(span<const byte,16>)
+//       Construct a ULID directly from its 16-byte big-endian form.
+//
+//   - ulid_t::from_uint64s(uint64_t hi, uint64_t lo)
+//       Construct from two 64-bit words representing the 128-bit value.
+//
+// Conversion
+// ----------
+//   - ulid_t::to_string() const
+//       Encode as canonical 26-character Crockford Base32.
+//
+//   - ulid_t::to_readable_string() const
+//       Produce the 35-character form with embedded ISO8601 timestamp.
+//
+//   - ulid_t::to_bytes() const
+//       Return the 16 bytes in big-endian order.
+//
+//   - ulid_t::as_bytes() const
+//       Borrow a span over the 16 bytes.
+//
+//   - ulid_t::timestamp_ms() const
+//       Extract the 48-bit timestamp as milliseconds since Unix epoch.
+//
+//   - ulid_t::to_uint64s() const
+//       Return the 128-bit value as a {hi, lo} pair of 64-bit words.
+//
+// Ordering
+// --------
+//   - operator<=>, operator==
+//       Strongly ordered across the full 128-bit value.
+//
+// Notes
+// -----
+//   - Uses RomuDuoJr by default, but the PRNG backend is pluggable.
+//   - Fully constexpr-friendly except where string allocation is required.
+//
+// Many thanks to Marius Bancila for inspiration:
 //   https://mariusbancila.ro/blog/2025/11/27/universally-unique-lexicographically-sortable-identifiers-ulids/
 
 namespace ulid{

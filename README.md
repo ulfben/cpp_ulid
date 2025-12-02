@@ -6,7 +6,7 @@ Provides fast generation, optional per-thread monotonicity, canonical [Crockford
 
 It comes with an extensive test suite validating correctness, encoding/decoding, monotonicity, and spec compliance. 
 
-[Try it on Compiler Explorer](https://compiler-explorer.com/z/d36E4jf3M)!
+[Try it on Compiler Explorer](https://compiler-explorer.com/z/f9Mfebxv5)!
 
 ### What are ULIDs?
 
@@ -82,7 +82,7 @@ The repository ships with test.cpp, a comprehensive correctness suite based on G
 - Spec example roundtrips
 - Timestamp and byte-level correctness
 
-You can [run all tests on compiler-explorer](https://compiler-explorer.com/z/d36E4jf3M).
+You can [run all tests on compiler-explorer](https://compiler-explorer.com/z/f9Mfebxv5).
 
 ## Dependencies
 Optional PRNG dependency: https://github.com/ulfben/cpp_prngs/
