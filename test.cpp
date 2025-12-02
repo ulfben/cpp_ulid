@@ -550,6 +550,54 @@ namespace {
 		}
 	}
 
+	TEST(Ulid, Uint64RoundtripKnownPattern){
+		using ulid::ulid_t;
 
+		const std::uint64_t hi = 0x0123456789ABCDEFull;
+		const std::uint64_t lo = 0xFEDCBA9876543210ull;
+
+		auto id = ulid_t::from_uint64s(hi, lo);
+		auto [hi2, lo2] = id.to_uint64s();
+
+		EXPECT_EQ(hi, hi2);
+		EXPECT_EQ(lo, lo2);
+
+		// Also verify the byte layout is big-endian.
+		auto bytes = id.to_bytes();
+		const std::array<std::uint8_t, 16> expected{
+			0x01, 0x23, 0x45, 0x67, 0x89, 0xAB, 0xCD, 0xEF,
+			0xFE, 0xDC, 0xBA, 0x98, 0x76, 0x54, 0x32, 0x10
+		};
+		EXPECT_TRUE(std::equal(bytes.begin(), bytes.end(), expected.begin()));
+	}
+
+	TEST(Ulid, Uint64RoundtripGenerated){
+		using ulid::ulid_t;
+
+		auto id = ulid_t::generate();
+		auto [hi, lo] = id.to_uint64s();
+		auto id2 = ulid_t::from_uint64s(hi, lo);
+
+		EXPECT_EQ(id, id2);
+		EXPECT_EQ(id.to_string(), id2.to_string());
+	}
+
+	TEST(Ulid, Uint64InteroperatesWithBytes){
+		using ulid::ulid_t;
+
+		// Start from raw bytes (simple increasing pattern)
+		std::array<ulid_t::byte, 16> raw{
+			0x00, 0x11, 0x22, 0x33, 0x44, 0x55, 0x66, 0x77,
+			0x88, 0x99, 0xAA, 0xBB, 0xCC, 0xDD, 0xEE, 0xFF
+		};
+		auto id = ulid_t::from_bytes(raw);
+
+		auto [hi, lo] = id.to_uint64s();
+		auto id2 = ulid_t::from_uint64s(hi, lo);
+		auto bytes2 = id2.to_bytes();
+
+		EXPECT_EQ(id, id2);
+		EXPECT_TRUE(std::equal(raw.begin(), raw.end(), bytes2.begin()));
+	}
 } // namespace
 

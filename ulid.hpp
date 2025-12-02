@@ -98,6 +98,21 @@ namespace ulid{
 			return last;
 		}
 
+		[[nodiscard]] constexpr static ulid_t from_bytes(std::span<const byte, 16> bytes) noexcept{
+			ulid_t ulid{}; // manual copy to avoid pulling in <algorithm>. sorry for the crime scene!
+			ulid.data = {bytes[0], bytes[1], bytes[2], bytes[3], bytes[4], bytes[5], bytes[6], bytes[7],
+				bytes[8], bytes[9], bytes[10],bytes[11],bytes[12],bytes[13],bytes[14],bytes[15]
+			};
+			return ulid;
+		}
+
+		[[nodiscard]] constexpr static ulid_t from_uint64s(std::uint64_t hi, std::uint64_t lo) noexcept{
+			ulid_t ulid{};
+			write_big_endian<8>(hi, ulid.high_bytes());
+			write_big_endian<8>(lo, ulid.low_bytes());
+			return ulid;
+		}
+
 		[[nodiscard]] constexpr static std::optional<ulid_t> from_string(std::string_view s) noexcept{
 			if(s.size() != 26){ return std::nullopt; }
 			std::array<std::uint64_t, 3> acc{}; // 192-bit accumulator: acc[0] = least significant 64 bits        
@@ -191,14 +206,6 @@ namespace ulid{
 			return ulid_t::from_string(canonical); // parse the completed canonical ULID
 		}
 
-		[[nodiscard]] constexpr static ulid_t from_bytes(std::span<const byte, 16> bytes) noexcept{
-			ulid_t ulid{}; // manual copy to avoid pulling in <algorithm>. sorry for the crime scene!
-			ulid.data = {bytes[0], bytes[1], bytes[2], bytes[3], bytes[4], bytes[5], bytes[6], bytes[7],
-				bytes[8], bytes[9], bytes[10],bytes[11],bytes[12],bytes[13],bytes[14],bytes[15]
-			};
-			return ulid;
-		}
-
 		[[nodiscard]] constexpr std::string to_string() const{
 			return encode_base32(data);
 		}
@@ -214,6 +221,13 @@ namespace ulid{
 		[[nodiscard]] constexpr std::span<const byte, 16> as_bytes() const noexcept{
 			return std::span<const byte, 16>(data);
 		}
+
+		[[nodiscard]] constexpr std::pair<std::uint64_t, std::uint64_t> to_uint64s() const noexcept{
+			const auto bytes = as_bytes();
+			const std::uint64_t hi = read_big_endian_u64(bytes.first<8>());
+			const std::uint64_t lo = read_big_endian_u64(bytes.last<8>());
+			return {hi, lo};
+		}	
 
 		// Note: to_readable_string() is an extension and not part of the ULID standard.
 		// It rewrites the ULID timestamp: the first 10 Base32 chars are replaced with
@@ -282,14 +296,10 @@ namespace ulid{
 
 		constexpr static std::string encode_base32(std::span<const byte, 16> bytes){
 			// interpret the 16 bytes as a single 128-bit big-endian integer: N = (hi << 64) | lo
-			std::uint64_t hi = 0;
-			for(int i = 0; i < 8; ++i){
-				hi = (hi << 8) | bytes[i];
-			}
-			std::uint64_t lo = 0;
-			for(int i = 8; i < 16; ++i){
-				lo = (lo << 8) | bytes[i];
-			}
+			// interpret the 16 bytes as a single 128-bit big-endian integer: N = (hi << 64) | lo
+			const std::uint64_t hi = read_big_endian_u64(bytes.first<8>());
+			const std::uint64_t lo = read_big_endian_u64(bytes.last<8>());
+
 			// we want 26 digits, each is 5 bits, covering bits 125..0 of the 128-bit value.
 			std::string out(26, '0');
 			for(int i = 0; i < 26; ++i){
@@ -330,6 +340,14 @@ namespace ulid{
 			for(std::size_t i = 0; i < N; ++i){
 				out[i] = static_cast<byte>((value >> ((N - 1 - i) * 8)) & 0xFF);
 			}
+		}
+
+		constexpr static std::uint64_t read_big_endian_u64(std::span<const byte, 8> in) noexcept{
+			std::uint64_t v = 0;
+			for(byte b : in){
+				v = (v << 8) | static_cast<std::uint64_t>(b);
+			}
+			return v;
 		}
 
 		constexpr static std::optional<std::uint8_t> decode_crockford(char c) noexcept{

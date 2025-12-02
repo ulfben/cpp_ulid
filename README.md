@@ -48,9 +48,11 @@ Use `to_readable_string()` and `from_readable_string()` to convert to and from t
 | ------------------------------------------------- | ------------------ | -------------------------------------------------------------------------------------------------------------------------------------------- |
 | `generate() noexcept`                             | `ulid_t`           | Generates a ULID using current timestamp and a per-thread PRNG. Millisecond-sorted but not strictly monotonic.                              |
 | `generate_monotonic() noexcept`                   | `ulid_t`           | Per-thread monotonic sequence (guaranteed only up to 2^80 ULIDs/ms). Handles clock rollback.                                                |
+| `from_bytes(span<const byte,16>) noexcept`        | `ulid_t`           | Constructs from 16 raw bytes.                                                                                                                |                                                                                                            |
+| `from_uint64s(uint64_t hi, uint64_t lo) noexcept` | `ulid_t` | Constructs a ULID from a 128-bit big-endian value split into high and low 64-bit words. |
 | `from_string(string_view) noexcept`               | `optional<ulid_t>` | Parses a 26-character Base32 ULID. Accepts lowercase and ambiguous input, returns canonical ULID or nullopt.|
 | `from_readable_string(string_view)`               | `optional<ulid_t>` | Parses the extended 35-character format (`YYYYMMDDThhmmssmmmZxxxxxxxxxxxxxxxx`). Human-readable timestamp + 16-char ULID randomness. Returns canonical ULID or `nullopt` on invalid input. |
-| `from_bytes(span<const byte,16>) noexcept`        | `ulid_t`           | Constructs from 16 raw bytes.                                                                                                                |                                                                                                            |
+
 
 ## Conversion
 | Method                                          | Returns    | Description                                          |
@@ -60,6 +62,7 @@ Use `to_readable_string()` and `from_readable_string()` to convert to and from t
 | `explicit operator string() const`              | `string`   | Same as `to_string()`.                               |
 | `to_bytes() const noexcept`      | `array<byte,16>`    | Raw bytes in big-endian layout.                      |
 | `as_bytes() const noexcept` | `span<const byte,16>`     | Borrow internal bytes.                               |
+| `to_uint64s() const noexcept` | `pair<uint64_t,uint64_t>` | Returns the 128-bit value as `{hi, lo}` 64-bit words in big-endian layout. |
 | `timestamp_ms() const noexcept`        | `uint64_t` | Extract 48-bit timestamp field.                      |
 
 ## Operators
